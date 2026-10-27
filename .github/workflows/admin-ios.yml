@@ -65,15 +65,19 @@ jobs:
         run: godot --headless --import || true
 
       - name: Export Xcode project
+        shell: bash
         run: |
           mkdir -p build/ios
-          godot --headless --verbose --export-release "iOS" build/ios/SabakAdmin.ipa 2>&1 | fold -w 55
-          find build/ios -maxdepth 2 | head -50
-
+          godot --headless --export-release "iOS" build/ios/SabakAdmin.ipa > export.log 2>&1 || true
+          echo "=== ERRORS ==="
+          grep -iE -A8 "error|invalid|missing|not (found|specified)" export.log | fold -w 50 | head -60
+          echo "=== FILES ==="
+          find build -maxdepth 3 | head -30
+          if ! find build -name "*.xcodeproj" | grep -q .; then echo "NO XCODEPROJ CREATED"; exit 1; fi
 
       - name: Build unsigned app
         run: |
-          PROJ=$(find build/ios -maxdepth 2 -name "*.xcodeproj" | head -1)
+          PROJ=$(find build -maxdepth 4 -name "*.xcodeproj" | head -1)
           SCHEME=$(basename "$PROJ" .xcodeproj)
           echo "Project: $PROJ  Scheme: $SCHEME"
           xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Release \
