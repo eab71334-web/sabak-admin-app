@@ -49,7 +49,7 @@ jobs:
           application/bundle_identifier="com.sabak.admin"
           application/short_version="1.0"
           application/version="1.0"
-          application/targeted_device_family=0
+          application/targeted_device_family=2
           user_data/accessible_from_files_app=true
           user_data/accessible_from_itunes_sharing=true
           storyboard/use_custom_bg_color=true
@@ -67,7 +67,7 @@ jobs:
       - name: Export Xcode project
         run: |
           mkdir -p build/ios
-          godot --headless --verbose --export-release "iOS" build/ios/SabakAdmin.ipa
+          godot --headless --verbose --export-release "iOS" build/ios/SabakAdmin.ipa 2>&1 | fold -w 55
           find build/ios -maxdepth 2 | head -50
 
 
