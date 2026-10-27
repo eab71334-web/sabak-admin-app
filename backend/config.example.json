@@ -1,0 +1,8 @@
+{
+  "port": 8080,
+  "admin_key": "PUT-A-LONG-RANDOM-SECRET-HERE",
+  "public_url": "https://your-domain.example",
+  "provider": "test",
+  "stripe_secret": "",
+  "stripe_webhook_secret": ""
+}
