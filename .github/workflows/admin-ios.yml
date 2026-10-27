@@ -1,1 +1,94 @@
+name: Admin IPA (Sabak Admin, unsigned)
 
+on:
+  push:
+    branches: [main, master]
+    paths: ["admin-app/**"]
+  workflow_dispatch:
+
+jobs:
+  ios:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: admin-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot 4.3 + export templates
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.3.0
+          use-dotnet: false
+          include-templates: true
+
+      - name: Write iOS export preset
+        run: |
+          cat > export_presets.cfg <<'EOT'
+          [preset.0]
+
+          name="iOS"
+          platform="iOS"
+          runnable=true
+          advanced_options=false
+          dedicated_server=false
+          custom_features=""
+          export_filter="all_resources"
+          include_filter=""
+          exclude_filter=""
+          export_path="build/ios/SabakAdmin.ipa"
+          encryption_include_filters=""
+          encryption_exclude_filters=""
+          encrypt_pck=false
+          encrypt_directory=false
+
+          [preset.0.options]
+
+          architectures/arm64=true
+          application/app_store_team_id="0000000000"
+          application/bundle_identifier="com.sabak.admin"
+          application/short_version="1.0"
+          application/version="1.0"
+          application/targeted_device_family=0
+          user_data/accessible_from_files_app=true
+          user_data/accessible_from_itunes_sharing=true
+          storyboard/use_custom_bg_color=true
+          storyboard/custom_bg_color=Color(0.03, 0.03, 0.04, 1)
+          application/export_project_only=true
+          application/code_sign_identity_debug=""
+          application/code_sign_identity_release=""
+          application/provisioning_profile_uuid_debug=""
+          application/provisioning_profile_uuid_release=""
+          EOT
+
+      - name: Import project
+        run: godot --headless --import || true
+
+      - name: Export Xcode project
+        run: |
+          mkdir -p build/ios
+          godot --headless --verbose --export-release "iOS" build/ios/SabakAdmin.ipa
+          find build/ios -maxdepth 2 | head -50
+
+
+      - name: Build unsigned app
+        run: |
+          PROJ=$(find build/ios -maxdepth 2 -name "*.xcodeproj" | head -1)
+          SCHEME=$(basename "$PROJ" .xcodeproj)
+          echo "Project: $PROJ  Scheme: $SCHEME"
+          xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" \
+            -archivePath build/app.xcarchive archive \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/app.xcarchive/Products/Applications/*.app Payload/
+          zip -qr SabakAdmin.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SabakAdmin-ipa
+          path: admin-app/SabakAdmin.ipa
