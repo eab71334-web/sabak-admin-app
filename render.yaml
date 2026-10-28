@@ -1,0 +1,17 @@
+# Render Blueprint for the Sabak backend (free plan: database resets on restart).
+services:
+  - type: web
+    name: sabak-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: echo "no build needed"
+    startCommand: python server.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ADMIN_KEY
+        generateValue: true
+      - key: PAY_PROVIDER
+        value: test
