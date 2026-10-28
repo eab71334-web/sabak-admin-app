@@ -71,6 +71,7 @@ func _show_login(status: String) -> void:
 	var sub := AUI.lbl(v, "لوحة إدارة ألعاب الشركة", 20, AUI.TXT2)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var u := AUI.field(v, "عنوان السيرفر", Api.url, false, "https://api.example.com")
+	u.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
 	var k := AUI.field(v, "مفتاح الإدارة", Api.key)
 	k.secret = true
 	var msg := AUI.lbl(v, status, 18, AUI.BAD, true)
