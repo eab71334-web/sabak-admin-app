@@ -72,8 +72,9 @@ jobs:
           echo "=== ERRORS ==="
           grep -A8 "configuration errors" export.log | cat -v | fold -w 50 | head -40
           echo "=== PRESET CHECK ==="
-          ls -la export_presets.cfg icon.png art fonts 2>&1 | head -20
-          ls ~/Library/Application\ Support/Godot/export_templates/ 2>&1 | head
+          ls ~/Library/Application\ Support/Godot/export_templates/* 2>&1 | head -20 || true
+          grep -n "emplate" export.log | cat -v | fold -w 50 | head -10 || true
+          sed -n 12,22p export.log | cat -v | fold -w 50 || true
           echo "=== FILES ==="
           find build -maxdepth 3 | head -30
           if ! find build -name "*.xcodeproj" | grep -q .; then echo "NO XCODEPROJ CREATED"; exit 1; fi
