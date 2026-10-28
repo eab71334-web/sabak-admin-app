@@ -61,6 +61,21 @@ jobs:
           application/provisioning_profile_uuid_release=""
           EOT
 
+      - name: Enable ETC2/ASTC textures (required for iOS export)
+        run: |
+          python3 - <<'PY'
+          p = "project.godot"
+          s = open(p).read()
+          k = "textures/vram_compression/import_etc2_astc=true"
+          if k not in s:
+              if "[rendering]" in s:
+                  s = s.replace("[rendering]", "[rendering]\n\n" + k, 1)
+              else:
+                  s += "\n[rendering]\n\n" + k + "\n"
+              open(p, "w").write(s)
+          PY
+          grep -n "etc2" project.godot
+
       - name: Import project
         run: godot --headless --import || true
 
