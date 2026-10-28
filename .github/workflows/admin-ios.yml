@@ -70,7 +70,10 @@ jobs:
           mkdir -p build/ios
           godot --headless --export-release "iOS" build/ios/SabakAdmin.ipa > export.log 2>&1 || true
           echo "=== ERRORS ==="
-          grep -iE -A8 "error|invalid|missing|not (found|specified)" export.log | fold -w 50 | head -60
+          grep -A8 "configuration errors" export.log | cat -v | fold -w 50 | head -40
+          echo "=== PRESET CHECK ==="
+          ls -la export_presets.cfg icon.png art fonts 2>&1 | head -20
+          ls ~/Library/Application\ Support/Godot/export_templates/ 2>&1 | head
           echo "=== FILES ==="
           find build -maxdepth 3 | head -30
           if ! find build -name "*.xcodeproj" | grep -q .; then echo "NO XCODEPROJ CREATED"; exit 1; fi
