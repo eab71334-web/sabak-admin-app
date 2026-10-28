@@ -84,7 +84,19 @@ static func field(parent: Node, title: String, value := "", numeric := false, hi
 	le.custom_minimum_size = Vector2(0, 52)
 	le.add_theme_font_size_override("font_size", 20)
 	le.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER if numeric else LineEdit.KEYBOARD_TYPE_DEFAULT
-	v.add_child(le)
+	le.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	v.add_child(row)
+	row.add_child(le)
+	# iOS has no paste menu inside game text fields, so give an explicit button.
+	var pb := btn(row, "لصق", func():
+		var clip := DisplayServer.clipboard_get().strip_edges()
+		if clip != "":
+			le.text = clip
+			le.caret_column = clip.length()
+			le.text_changed.emit(clip), CARD, 17, 52)
+	pb.custom_minimum_size = Vector2(84, 52)
 	return le
 
 
