@@ -19,7 +19,7 @@ func refresh() -> void:
 			AUI.lbl(_list, "تعذر الاتصال بالسيرفر", 20, AUI.BAD)
 			return
 		if str(s.get("provider", "")) != "stripe":
-			var w := AUI.card(_list, Color(0.2, 0.14, 0.04))
+			var w := AUI.card(_list, Color(0.83, 0.68, 0.36, 0.12))
 			AUI.lbl(w, "وضع التجربة: الدفع غير حقيقي. لن تظهر أموال حقيقية قبل تفعيل بوابة الدفع.", 17, AUI.GOLD, true)
 		var rev := AUI.card(_list)
 		AUI.lbl(rev, "الأرباح (حقيقية)", 16, AUI.TXT2)
