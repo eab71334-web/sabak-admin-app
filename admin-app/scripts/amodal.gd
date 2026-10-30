@@ -48,7 +48,7 @@ func _build(title: String) -> void:
 	_top = 16.0 + ins["top"]
 	_bottom = 16.0 + ins["bottom"]
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.72)
+	dim.color = Color(0, 0, 0, 0.78)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
@@ -60,7 +60,7 @@ func _build(title: String) -> void:
 	add_child(_margin)
 	_panel = PanelContainer.new()
 	_panel.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var st := AUI.sb(AUI.PANEL, 24, Color(1, 1, 1, 0.12), 1)
+	var st := AUI.sb(Color(0.07, 0.07, 0.08, 0.98), 30, Color(1, 1, 1, 0.14), 1)
 	st.content_margin_left = 18
 	st.content_margin_right = 18
 	st.content_margin_top = 14
