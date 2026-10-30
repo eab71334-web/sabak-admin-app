@@ -97,6 +97,17 @@ static func field(parent: Node, title: String, value := "", numeric := false, hi
 			le.caret_column = clip.length()
 			le.text_changed.emit(clip), CARD, 17, 52)
 	pb.custom_minimum_size = Vector2(84, 52)
+	# the iOS number pad has no Return key and covers the dialog buttons: give a "done" button that closes the keyboard
+	var db := btn(row, "تم", func():
+		le.release_focus()
+		DisplayServer.virtual_keyboard_hide(), ACCENT, 17, 52)
+	db.custom_minimum_size = Vector2(70, 52)
+	db.visible = false
+	le.focus_entered.connect(func(): db.visible = true)
+	le.focus_exited.connect(func(): db.visible = false)
+	le.text_submitted.connect(func(_t: String):
+		le.release_focus()
+		DisplayServer.virtual_keyboard_hide())
 	return le
 
 
