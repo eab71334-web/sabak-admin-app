@@ -61,6 +61,9 @@ func _show_login(status: String) -> void:
 	m.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	for s in ["left", "right", "top", "bottom"]:
 		m.add_theme_constant_override("margin_" + s, 28)
+	var ins0 := AUI.insets(self)
+	m.add_theme_constant_override("margin_top", 28 + int(ins0["top"]))
+	m.add_theme_constant_override("margin_bottom", 28 + int(ins0["bottom"]))
 	add_child(m)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -101,8 +104,12 @@ func _show_app() -> void:
 	col.add_theme_constant_override("separation", 0)
 	add_child(col)
 	# top bar
+	var ins := AUI.insets(self)
 	var top := PanelContainer.new()
-	top.add_theme_stylebox_override("panel", AUI.sb(AUI.PANEL, 0))
+	var top_sb := AUI.sb(AUI.PANEL, 0)
+	top_sb.content_margin_top = 12 + ins["top"] + 10   # keep the bar below the notch / status bar
+	top_sb.content_margin_bottom = 12
+	top.add_theme_stylebox_override("panel", top_sb)
 	col.add_child(top)
 	var th := HBoxContainer.new()
 	th.add_theme_constant_override("separation", 10)
@@ -143,7 +150,9 @@ func _show_app() -> void:
 		_pages[d[0]] = p
 	# bottom nav
 	var nav := PanelContainer.new()
-	nav.add_theme_stylebox_override("panel", AUI.sb(AUI.PANEL, 0))
+	var nav_sb := AUI.sb(AUI.PANEL, 0)
+	nav_sb.content_margin_bottom = 8 + ins["bottom"]   # clear of the home indicator
+	nav.add_theme_stylebox_override("panel", nav_sb)
 	col.add_child(nav)
 	var nh := HBoxContainer.new()
 	nh.add_theme_constant_override("separation", 6)
