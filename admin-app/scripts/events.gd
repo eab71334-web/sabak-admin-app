@@ -84,5 +84,8 @@ func _new_form() -> void:
 			else:
 				out.text = "فشل النشر"
 				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 56)
+	var room := Control.new()   # lets the last fields scroll above the on-screen keyboard
+	room.custom_minimum_size = Vector2(0, 330)
+	v.add_child(room)
 	add_child(dlg)
 	dlg.popup_centered(Vector2i(660, 900))
