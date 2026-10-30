@@ -46,21 +46,15 @@ func refresh() -> void:
 				Api.post_json("event/toggle", {"id": eid, "active": not on}, func(_h, _d): refresh()), AUI.PANEL, 17, 44)
 			b1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var b2 := AUI.btn(br, "حذف", func():
-				Api.post_json("event/delete", {"id": eid}, func(_h, _d): refresh()), AUI.PANEL, 17, 44)
+				AModal.confirm(app, "حذف الفعالية", "ستُحذف هذه الفعالية نهائياً.", "حذف",
+					func(): Api.post_json("event/delete", {"id": eid}, func(_h, _d): refresh())), AUI.PANEL, 17, 44)
+			b2.add_theme_color_override("font_color", AUI.BAD)
 			b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL)
 
 
 func _new_form() -> void:
-	var dlg := AcceptDialog.new()
-	dlg.title = "فعالية جديدة"
-	dlg.ok_button_text = "إغلاق"
-	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(600, 800)
-	dlg.add_child(sc)
-	var v := VBoxContainer.new()
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.add_theme_constant_override("separation", 8)
-	sc.add_child(v)
+	var m := AModal.open(app, "فعالية جديدة")
+	var v := m.content
 	var ta := AUI.field(v, "العنوان بالعربي", "")
 	var te := AUI.field(v, "العنوان بالإنجليزي", "")
 	var ba := AUI.field(v, "الوصف بالعربي", "")
@@ -69,7 +63,8 @@ func _new_form() -> void:
 	var rg := AUI.field(v, "جائزة جواهر", "0", true)
 	var days := AUI.field(v, "المدة بالأيام", "7", true)
 	var game := AUI.field(v, "اللعبة (فارغ = كل الألعاب)", Api.game, false, "hairpin")
-	var out := AUI.lbl(v, "", 18, AUI.OK, true)
+	var out := AUI.lbl(v, "", 20, AUI.OK, true)
+	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	AUI.btn(v, "نشر الفعالية", func():
 		if ta.text.strip_edges() == "" and te.text.strip_edges() == "":
 			out.text = "اكتب عنواناً"
@@ -81,11 +76,7 @@ func _new_form() -> void:
 				out.text = "تم النشر"
 				out.add_theme_color_override("font_color", AUI.OK)
 				refresh()
+				m.close()
 			else:
 				out.text = "فشل النشر"
-				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 56)
-	var room := Control.new()   # lets the last fields scroll above the on-screen keyboard
-	room.custom_minimum_size = Vector2(0, 330)
-	v.add_child(room)
-	add_child(dlg)
-	dlg.popup_centered(Vector2i(660, 900))
+				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 58)
