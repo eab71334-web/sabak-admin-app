@@ -17,6 +17,22 @@ func _ready() -> void:
 	bg.color = AUI.BG
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(bg)
+	var glow := TextureRect.new()
+	var gt := GradientTexture2D.new()
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.0)
+	gt.fill_to = Vector2(0.5, 0.75)
+	gt.width = 256
+	gt.height = 256
+	var gr := Gradient.new()
+	gr.colors = PackedColorArray([Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.20), Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.0)])
+	gt.gradient = gr
+	glow.texture = gt
+	glow.stretch_mode = TextureRect.STRETCH_SCALE
+	glow.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(glow)
 	if Api.url != "" and Api.key != "":
 		Api.get_json("ping", func(code: int, _d: Dictionary):
 			if code == 200:
@@ -47,7 +63,7 @@ func say(msg: String, good := true) -> void:
 
 func _clear_ui() -> void:
 	for c in get_children():
-		if c is ColorRect or c == _toast:
+		if c is ColorRect or c is TextureRect or c == _toast:
 			continue
 		c.queue_free()
 	_pages.clear()
@@ -69,9 +85,12 @@ func _show_login(status: String) -> void:
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_theme_constant_override("separation", 14)
 	m.add_child(v)
-	var t := AUI.lbl(v, "سَبَك  Sabak Admin", 40, AUI.TXT)
+	var lg := ALogo.new(120)
+	lg.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	v.add_child(lg)
+	var t := AUI.lbl(v, "SABAK", 44, AUI.TXT)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var sub := AUI.lbl(v, "لوحة إدارة ألعاب الشركة", 20, AUI.TXT2)
+	var sub := AUI.lbl(v, "لوحة إدارة الألعاب", 20, AUI.ACCENT)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var u := AUI.field(v, "عنوان السيرفر", Api.url, false, "https://api.example.com")
 	u.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_URL
@@ -105,37 +124,48 @@ func _show_app() -> void:
 	add_child(col)
 	# top bar
 	var ins := AUI.insets(self)
-	var top := PanelContainer.new()
-	var top_sb := AUI.sb(AUI.PANEL, 0)
-	top_sb.content_margin_top = 12 + ins["top"] + 10   # keep the bar below the notch / status bar
-	top_sb.content_margin_bottom = 12
-	top.add_theme_stylebox_override("panel", top_sb)
+	var top := MarginContainer.new()
+	top.add_theme_constant_override("margin_top", int(ins["top"]) + 10)
+	top.add_theme_constant_override("margin_bottom", 8)
+	top.add_theme_constant_override("margin_left", 16)
+	top.add_theme_constant_override("margin_right", 16)
 	col.add_child(top)
 	var th := HBoxContainer.new()
 	th.add_theme_constant_override("separation", 10)
 	top.add_child(th)
-	_title = AUI.lbl(th, "", 26, AUI.TXT)
+	var lg := ALogo.new(46)
+	th.add_child(lg)
+	_title = AUI.lbl(th, "", 30, AUI.TXT)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_games = OptionButton.new()
-	_games.custom_minimum_size = Vector2(170, 46)
+	_games.custom_minimum_size = Vector2(150, 44)
 	for sn in ["normal", "hover", "pressed", "focus"]:
-		_games.add_theme_stylebox_override(sn, AUI.sb(AUI.CARD, 10, AUI.LINE, 1))
+		_games.add_theme_stylebox_override(sn, AUI.sb(Color(1, 1, 1, 0.08), 22, Color(1, 1, 1, 0.12), 1))
 	_games.add_theme_color_override("font_color", AUI.TXT)
 	_games.add_theme_color_override("font_hover_color", AUI.TXT)
-	_games.add_theme_font_size_override("font_size", 17)
+	_games.add_theme_color_override("font_pressed_color", AUI.TXT)
+	_games.add_theme_font_size_override("font_size", 16)
+	var pop := _games.get_popup()
+	pop.add_theme_stylebox_override("panel", AUI.sb(Color(0.08, 0.08, 0.09), 18, AUI.LINE, 1))
+	pop.add_theme_stylebox_override("hover", AUI.sb(Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.2), 10))
+	pop.add_theme_color_override("font_color", AUI.TXT)
+	pop.add_theme_color_override("font_hover_color", AUI.ACCENT)
+	pop.add_theme_font_size_override("font_size", 18)
 	_games.item_selected.connect(func(i: int):
 		Api.game = "" if i == 0 else Api.games[i - 1]
 		Api.save()
 		_refresh())
 	th.add_child(_games)
-	AUI.btn(th, "تحديث", func(): _refresh(), AUI.CARD, 17, 46)
+	AUI.btn(th, "تحديث", func(): _refresh(), AUI.PANEL, 16, 44)
 	AUI.btn(th, "خروج", func():
 		Api.logout()
-		_show_login(""), AUI.CARD, 17, 46)
+		_show_login(""), AUI.PANEL, 16, 44)
 	var mm := MarginContainer.new()
 	mm.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	for s in ["left", "right", "top", "bottom"]:
-		mm.add_theme_constant_override("margin_" + s, 14)
+		mm.add_theme_constant_override("margin_" + s, 16)
+	mm.add_theme_constant_override("margin_top", 6)
 	col.add_child(mm)
 	_body = Control.new()
 	mm.add_child(_body)
@@ -149,21 +179,32 @@ func _show_app() -> void:
 		_body.add_child(p)
 		_pages[d[0]] = p
 	# bottom nav
+	var navm := MarginContainer.new()
+	navm.add_theme_constant_override("margin_left", 14)
+	navm.add_theme_constant_override("margin_right", 14)
+	navm.add_theme_constant_override("margin_top", 4)
+	navm.add_theme_constant_override("margin_bottom", 6 + int(ins["bottom"]))
+	col.add_child(navm)
 	var nav := PanelContainer.new()
-	var nav_sb := AUI.sb(AUI.PANEL, 0)
-	nav_sb.content_margin_bottom = 8 + ins["bottom"]   # clear of the home indicator
+	var nav_sb := AUI.sb(Color(0.09, 0.09, 0.1, 0.96), 36, Color(1, 1, 1, 0.14), 1)
+	nav_sb.content_margin_left = 8
+	nav_sb.content_margin_right = 8
+	nav_sb.content_margin_top = 8
+	nav_sb.content_margin_bottom = 8
+	nav_sb.shadow_color = Color(0, 0, 0, 0.6)
+	nav_sb.shadow_size = 18
 	nav.add_theme_stylebox_override("panel", nav_sb)
-	col.add_child(nav)
+	navm.add_child(nav)
 	var nh := HBoxContainer.new()
-	nh.add_theme_constant_override("separation", 6)
+	nh.add_theme_constant_override("separation", 4)
 	nav.add_child(nh)
 	for d in defs:
 		var b := Button.new()
 		b.text = d[1]
 		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		b.custom_minimum_size = Vector2(0, 62)
-		b.add_theme_font_size_override("font_size", 17)
+		b.custom_minimum_size = Vector2(0, 54)
+		b.add_theme_font_size_override("font_size", 16)
 		var id: String = d[0]
 		b.pressed.connect(func(): _open(id))
 		nh.add_child(b)
@@ -191,7 +232,7 @@ func _open(id: String) -> void:
 		var b: Button = _nav[k]
 		var on: bool = k == id
 		for sn in ["normal", "hover", "pressed", "focus"]:
-			b.add_theme_stylebox_override(sn, AUI.sb(Color(1.0, 0.47, 0.1, 0.16) if on else Color(0, 0, 0, 0), 10, AUI.ACCENT if on else Color.TRANSPARENT, 2 if on else 0))
+			b.add_theme_stylebox_override(sn, AUI.sb(Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.16) if on else Color(0, 0, 0, 0), 26, Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.55) if on else Color.TRANSPARENT, 1 if on else 0))
 		b.add_theme_color_override("font_color", AUI.ACCENT if on else AUI.TXT2)
 		b.add_theme_color_override("font_hover_color", AUI.ACCENT if on else AUI.TXT)
 		b.add_theme_color_override("font_pressed_color", AUI.ACCENT)
