@@ -3,16 +3,16 @@ class_name AUI
 extends RefCounted
 ## Small UI helpers for the admin app.
 
-const BG := Color(0.04, 0.045, 0.06)
-const PANEL := Color(0.085, 0.092, 0.118)
-const CARD := Color(0.11, 0.118, 0.15)
-const LINE := Color(1, 1, 1, 0.09)
-const TXT := Color(0.94, 0.95, 0.97)
-const TXT2 := Color(0.62, 0.66, 0.74)
-const ACCENT := Color(1.0, 0.47, 0.1)
-const OK := Color(0.4, 0.85, 0.5)
-const BAD := Color(1.0, 0.4, 0.38)
-const GOLD := Color(1.0, 0.8, 0.25)
+const BG := Color(0.0, 0.0, 0.0)
+const PANEL := Color(0.06, 0.06, 0.07)
+const CARD := Color(1, 1, 1, 0.06)          # frosted-glass card
+const LINE := Color(1, 1, 1, 0.11)
+const TXT := Color(0.97, 0.97, 0.98)
+const TXT2 := Color(0.62, 0.62, 0.68)
+const ACCENT := Color(0.83, 0.68, 0.36)      # the gold of the icon
+const OK := Color(0.45, 0.86, 0.62)
+const BAD := Color(1.0, 0.43, 0.41)
+const GOLD := Color(0.93, 0.78, 0.46)
 const DANGER := Color(0.78, 0.2, 0.22)
 
 
@@ -48,15 +48,24 @@ static func btn(parent: Node, text: String, cb: Callable, col := CARD, fs := 20,
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(0, h)
 	b.add_theme_font_size_override("font_size", fs)
-	var fg := Color.BLACK if col == ACCENT else TXT
+	var solid := col == ACCENT or col == DANGER
+	var base := col
+	var edge := Color.TRANSPARENT
+	var bw := 0
+	if not solid:
+		base = Color(1, 1, 1, 0.09) if col == PANEL else col   # glass
+		edge = Color(1, 1, 1, 0.12)
+		bw = 1
+	var fg := Color(0.05, 0.04, 0.02) if col == ACCENT else TXT
+	var rad := int(h * 0.5)
 	b.add_theme_color_override("font_color", fg)
 	b.add_theme_color_override("font_hover_color", fg)
 	b.add_theme_color_override("font_pressed_color", fg)
 	b.add_theme_color_override("font_disabled_color", TXT2)
-	b.add_theme_stylebox_override("normal", sb(col, 10))
-	b.add_theme_stylebox_override("hover", sb(col.lightened(0.08), 10))
-	b.add_theme_stylebox_override("pressed", sb(col.lightened(0.16), 10))
-	b.add_theme_stylebox_override("disabled", sb(col.darkened(0.35), 10))
+	b.add_theme_stylebox_override("normal", sb(base, rad, edge, bw))
+	b.add_theme_stylebox_override("hover", sb(base.lightened(0.1), rad, edge, bw))
+	b.add_theme_stylebox_override("pressed", sb(base.lightened(0.2), rad, edge, bw))
+	b.add_theme_stylebox_override("disabled", sb(Color(base.r, base.g, base.b, base.a * 0.45), rad, edge, bw))
 	b.pressed.connect(cb)
 	if parent:
 		parent.add_child(b)
@@ -65,7 +74,12 @@ static func btn(parent: Node, text: String, cb: Callable, col := CARD, fs := 20,
 
 static func card(parent: Node, col := CARD) -> VBoxContainer:
 	var p := PanelContainer.new()
-	p.add_theme_stylebox_override("panel", sb(col, 14, LINE, 1))
+	var st := sb(col, 24, LINE, 1)
+	st.content_margin_left = 18
+	st.content_margin_right = 18
+	st.content_margin_top = 14
+	st.content_margin_bottom = 14
+	p.add_theme_stylebox_override("panel", st)
 	parent.add_child(p)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
@@ -84,6 +98,15 @@ static func field(parent: Node, title: String, value := "", numeric := false, hi
 	le.placeholder_text = hint
 	le.custom_minimum_size = Vector2(0, 52)
 	le.add_theme_font_size_override("font_size", 20)
+	var fn := sb(Color(1, 1, 1, 0.07), 18, LINE, 1)
+	var ff := sb(Color(1, 1, 1, 0.09), 18, Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.9), 2)
+	le.add_theme_stylebox_override("normal", fn)
+	le.add_theme_stylebox_override("focus", ff)
+	le.add_theme_stylebox_override("read_only", fn)
+	le.add_theme_color_override("font_color", TXT)
+	le.add_theme_color_override("font_placeholder_color", Color(1, 1, 1, 0.28))
+	le.add_theme_color_override("caret_color", ACCENT)
+	le.add_theme_color_override("selection_color", Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.35))
 	le.virtual_keyboard_type = LineEdit.KEYBOARD_TYPE_NUMBER if numeric else LineEdit.KEYBOARD_TYPE_DEFAULT
 	le.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var row := HBoxContainer.new()
