@@ -52,31 +52,18 @@ func refresh() -> void:
 				Api.post_json("code/toggle", {"code": code_s, "active": not active}, func(_h, _d): refresh()), AUI.PANEL, 17, 44)
 			b1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var b2 := AUI.btn(br, "حذف", func(): _confirm_delete(code_s), AUI.PANEL, 17, 44)
+			b2.add_theme_color_override("font_color", AUI.BAD)
 			b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL)
 
 
 func _confirm_delete(code_s: String) -> void:
-	var dlg := ConfirmationDialog.new()
-	dlg.dialog_text = "حذف الكود %s نهائياً؟" % code_s
-	dlg.ok_button_text = "حذف"
-	dlg.cancel_button_text = "إلغاء"
-	dlg.confirmed.connect(func():
-		Api.post_json("code/delete", {"code": code_s}, func(_h, _d): refresh()))
-	add_child(dlg)
-	dlg.popup_centered(Vector2i(520, 200))
+	AModal.confirm(app, "حذف الكود", "سيُحذف الكود %s نهائياً ولا يمكن التراجع." % code_s, "حذف",
+		func(): Api.post_json("code/delete", {"code": code_s}, func(_h, _d): refresh()))
 
 
 func _new_form() -> void:
-	var dlg := AcceptDialog.new()
-	dlg.title = "كود جديد"
-	dlg.ok_button_text = "إغلاق"
-	var sc := ScrollContainer.new()
-	sc.custom_minimum_size = Vector2(600, 760)
-	dlg.add_child(sc)
-	var v := VBoxContainer.new()
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	v.add_theme_constant_override("separation", 8)
-	sc.add_child(v)
+	var m := AModal.open(app, "كود جديد")
+	var v := m.content
 	var coins := AUI.field(v, "عملات", "5000", true)
 	var gems := AUI.field(v, "جواهر", "20", true)
 	var uses := AUI.field(v, "عدد مرات الاستخدام الكلي (0 = بلا حد)", "1", true)
@@ -85,23 +72,18 @@ func _new_form() -> void:
 	var custom := AUI.field(v, "كود مخصص (اختياري، مع عدد 1 فقط)", "", false, "WELCOME")
 	var game := AUI.field(v, "اللعبة (فارغ = كل الألعاب)", Api.game, false, "hairpin")
 	var note := AUI.field(v, "ملاحظة", "")
-	var out := AUI.lbl(v, "", 20, AUI.OK, true)
-	out.selectable = false
+	var out := AUI.lbl(v, "", 22, AUI.OK, true)
+	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	AUI.btn(v, "إنشاء", func():
 		Api.post_json("codes", {"coins": int(coins.text), "gems": int(gems.text), "max_uses": int(uses.text), "expires_days": float(days.text), "count": int(count.text),
 				"code": custom.text.strip_edges(), "game": game.text.strip_edges(), "note": note.text}, func(_h: int, d: Dictionary):
 			if d.get("ok", false):
 				var made: Array = d.get("codes", [])
 				out.text = "\n".join(made)
-				out.add_theme_color_override("font_color", AUI.OK)
+				out.add_theme_color_override("font_color", AUI.GOLD)
 				DisplayServer.clipboard_set("\n".join(made))
 				app.say("تم إنشاء %d وتم نسخها" % made.size())
 				refresh()
 			else:
 				out.text = "الكود موجود مسبقاً" if str(d.get("error", "")) == "exists" else "فشل الإنشاء"
-				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 56)
-	var room := Control.new()   # lets the last fields scroll above the on-screen keyboard
-	room.custom_minimum_size = Vector2(0, 330)
-	v.add_child(room)
-	add_child(dlg)
-	dlg.popup_centered(Vector2i(660, 880))
+				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 58)
