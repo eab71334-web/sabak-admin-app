@@ -13,6 +13,7 @@ const ACCENT := Color(1.0, 0.47, 0.1)
 const OK := Color(0.4, 0.85, 0.5)
 const BAD := Color(1.0, 0.4, 0.38)
 const GOLD := Color(1.0, 0.8, 0.25)
+const DANGER := Color(0.78, 0.2, 0.22)
 
 
 static func sb(col: Color, radius := 12, border := Color.TRANSPARENT, bw := 0) -> StyleBoxFlat:
@@ -100,14 +101,14 @@ static func field(parent: Node, title: String, value := "", numeric := false, hi
 	# the iOS number pad has no Return key and covers the dialog buttons: give a "done" button that closes the keyboard
 	var db := btn(row, "تم", func():
 		le.release_focus()
-		DisplayServer.virtual_keyboard_hide(), ACCENT, 17, 52)
+		AUI.hide_kb(), ACCENT, 17, 52)
 	db.custom_minimum_size = Vector2(70, 52)
 	db.visible = false
 	le.focus_entered.connect(func(): db.visible = true)
 	le.focus_exited.connect(func(): db.visible = false)
 	le.text_submitted.connect(func(_t: String):
 		le.release_focus()
-		DisplayServer.virtual_keyboard_hide())
+		AUI.hide_kb())
 	return le
 
 
@@ -124,8 +125,7 @@ static func usd(v: float) -> String:
 
 
 static func scroll_page(parent: Node) -> VBoxContainer:
-	var sc := ScrollContainer.new()
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var sc := DragScroll.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	parent.add_child(sc)
@@ -134,3 +134,18 @@ static func scroll_page(parent: Node) -> VBoxContainer:
 	v.add_theme_constant_override("separation", 10)
 	sc.add_child(v)
 	return v
+
+
+## Space taken by the notch / status bar (top) and the home indicator (bottom), in UI pixels.
+static func insets(node: Node) -> Dictionary:
+	var win := Vector2(DisplayServer.window_get_size())
+	var sa := Rect2(DisplayServer.get_display_safe_area())
+	if win.y <= 0.0 or sa.size.y <= 0.0:
+		return {"top": 0.0, "bottom": 0.0}
+	var sy: float = node.get_viewport().get_visible_rect().size.y / win.y
+	return {"top": maxf(sa.position.y, 0.0) * sy, "bottom": maxf(win.y - sa.end.y, 0.0) * sy}
+
+
+static func hide_kb() -> void:
+	if OS.has_feature("mobile"):
+		DisplayServer.virtual_keyboard_hide()
