@@ -27,6 +27,8 @@ func _init() -> void:
 
 func refresh() -> void:
 	Api.get_json("reports?limit=80", func(code: int, d: Dictionary):
+		if not is_instance_valid(_list):
+			return
 		for c in _list.get_children():
 			c.queue_free()
 		if code != 200:
