@@ -13,6 +13,7 @@ var _suppress_release := false   # swallow the mouse-release that the engine emu
 
 func _ready() -> void:
 	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER   # no white scrollbar; finger drag scrolls
 	follow_focus = true
 
 
@@ -26,7 +27,7 @@ func _begin(pos: Vector2) -> void:
 func _end() -> void:
 	if _down and _dragging:
 		_suppress_release = true
-		get_viewport().set_input_as_handled()   # the finger moved: do not click what is under it
+		_handled()   # the finger moved: do not click what is under it
 	_down = false
 	_dragging = false
 
@@ -51,7 +52,7 @@ func _input(e: InputEvent) -> void:
 		if mb.device == InputEvent.DEVICE_ID_EMULATION:
 			if not mb.pressed and _suppress_release:
 				_suppress_release = false
-				get_viewport().set_input_as_handled()
+				_handled()
 		elif mb.pressed:
 			_begin(mb.position)
 		else:
@@ -60,7 +61,7 @@ func _input(e: InputEvent) -> void:
 		var mm := e as InputEventMouseMotion
 		if mm.device == InputEvent.DEVICE_ID_EMULATION:
 			if _dragging:
-				get_viewport().set_input_as_handled()   # emulated from a touch drag: already handled
+				_handled()   # emulated from a touch drag: already handled
 		elif (mm.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
 			_step(mm.relative.y)
 
@@ -71,6 +72,18 @@ func _step(dy: float) -> void:
 		return
 	if not _dragging:
 		_dragging = true
-		get_viewport().gui_release_focus()   # cancels the half-pressed button / text caret
+		_release()   # cancels the half-pressed button / text caret
 	scroll_vertical -= int(dy)
-	get_viewport().set_input_as_handled()
+	_handled()
+
+
+func _handled() -> void:
+	var vp := get_viewport()
+	if vp != null:
+		vp.set_input_as_handled()
+
+
+func _release() -> void:
+	var vp := get_viewport()
+	if vp != null:
+		vp.gui_release_focus()
