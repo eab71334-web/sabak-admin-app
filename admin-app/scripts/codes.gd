@@ -15,6 +15,8 @@ func _init() -> void:
 
 func refresh() -> void:
 	Api.get_json("codes", func(code: int, d: Dictionary):
+		if not is_instance_valid(_list):
+			return
 		for c in _list.get_children():
 			c.queue_free()
 		if code != 200:
@@ -74,16 +76,29 @@ func _new_form() -> void:
 	var note := AUI.field(v, "ملاحظة", "")
 	var out := AUI.lbl(v, "", 22, AUI.OK, true)
 	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	AUI.btn(v, "إنشاء", func():
+	var busy := {"b": null, "on": false}
+	busy["b"] = AUI.btn(v, "إنشاء", func():
+		if busy["on"]:
+			return
+		busy["on"] = true
+		(busy["b"] as Button).disabled = true
 		Api.post_json("codes", {"coins": int(coins.text), "gems": int(gems.text), "max_uses": int(uses.text), "expires_days": float(days.text), "count": int(count.text),
 				"code": custom.text.strip_edges(), "game": game.text.strip_edges(), "note": note.text}, func(_h: int, d: Dictionary):
+			busy["on"] = false
+			var bb: Variant = busy["b"]
+			if bb != null and is_instance_valid(bb):
+				(bb as Button).disabled = false
 			if d.get("ok", false):
 				var made: Array = d.get("codes", [])
-				out.text = "\n".join(made)
-				out.add_theme_color_override("font_color", AUI.GOLD)
 				DisplayServer.clipboard_set("\n".join(made))
 				app.say("تم إنشاء %d وتم نسخها" % made.size())
 				refresh()
+				if not is_instance_valid(out):
+					return
+				out.text = "\n".join(made)
+				out.add_theme_color_override("font_color", AUI.GOLD)
 			else:
+				if not is_instance_valid(out):
+					return
 				out.text = "الكود موجود مسبقاً" if str(d.get("error", "")) == "exists" else "فشل الإنشاء"
 				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 58)
