@@ -15,6 +15,8 @@ func _init() -> void:
 
 func refresh() -> void:
 	Api.get_json("events", func(code: int, d: Dictionary):
+		if not is_instance_valid(_list):
+			return
 		for c in _list.get_children():
 			c.queue_free()
 		if code != 200:
@@ -65,18 +67,28 @@ func _new_form() -> void:
 	var game := AUI.field(v, "اللعبة (فارغ = كل الألعاب)", Api.game, false, "hairpin")
 	var out := AUI.lbl(v, "", 20, AUI.OK, true)
 	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	AUI.btn(v, "نشر الفعالية", func():
+	var busy := {"b": null, "on": false}
+	busy["b"] = AUI.btn(v, "نشر الفعالية", func():
+		if busy["on"]:
+			return
 		if ta.text.strip_edges() == "" and te.text.strip_edges() == "":
 			out.text = "اكتب عنواناً"
 			out.add_theme_color_override("font_color", AUI.BAD)
 			return
+		busy["on"] = true
+		(busy["b"] as Button).disabled = true
 		Api.post_json("events", {"title": te.text, "title_ar": ta.text, "body": be.text, "body_ar": ba.text, "reward_coins": int(rc.text), "reward_gems": int(rg.text),
 				"days": float(days.text), "game": game.text.strip_edges()}, func(_h: int, d: Dictionary):
+			busy["on"] = false
+			var bb: Variant = busy["b"]
+			if bb != null and is_instance_valid(bb):
+				(bb as Button).disabled = false
 			if d.get("ok", false):
-				out.text = "تم النشر"
-				out.add_theme_color_override("font_color", AUI.OK)
 				refresh()
-				m.close()
+				if is_instance_valid(m):
+					m.close()
 			else:
+				if not is_instance_valid(out):
+					return
 				out.text = "فشل النشر"
 				out.add_theme_color_override("font_color", AUI.BAD)), AUI.ACCENT, 22, 58)
