@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Sabak Studios. All rights reserved. See LICENSE.
 extends Control
-## Sabak Admin: login screen, then five pages (home, codes, events, payments, errors).
+## Sabak Admin: login screen, then five tabs (home, players, codes, events, more).
 
 var _pages := {}
 var _nav := {}
@@ -155,7 +155,7 @@ func _show_app() -> void:
 	_body = Control.new()
 	mm.add_child(_body)
 	# pages
-	var defs := [["home", "الرئيسية", AHome], ["codes", "الأكواد", ACodes], ["events", "الفعاليات", AEvents], ["pay", "المدفوعات", APayments], ["err", "الأخطاء", AErrors]]
+	var defs := [["home", "الرئيسية", AHome], ["players", "اللاعبون", APlayers], ["codes", "الأكواد", ACodes], ["events", "الفعاليات", AEvents], ["more", "المزيد", AMore]]
 	for d in defs:
 		var p: Control = d[2].new()
 		p.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -189,7 +189,7 @@ func _show_app() -> void:
 		b.focus_mode = Control.FOCUS_NONE
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.custom_minimum_size = Vector2(0, 54)
-		b.add_theme_font_size_override("font_size", 16)
+		b.add_theme_font_size_override("font_size", 15)
 		var id: String = d[0]
 		b.pressed.connect(func(): _open(id))
 		nh.add_child(b)
@@ -240,7 +240,7 @@ func _open(id: String) -> void:
 		b.add_theme_color_override("font_color", AUI.ACCENT if on else AUI.TXT2)
 		b.add_theme_color_override("font_hover_color", AUI.ACCENT if on else AUI.TXT)
 		b.add_theme_color_override("font_pressed_color", AUI.ACCENT)
-	_title.text = {"home": "الرئيسية", "codes": "الأكواد", "events": "الفعاليات", "pay": "المدفوعات", "err": "الأخطاء"}[id]
+	_title.text = {"home": "الرئيسية", "players": "اللاعبون", "codes": "الأكواد", "events": "الفعاليات", "more": "المزيد"}[id]
 	_refresh()
 
 
