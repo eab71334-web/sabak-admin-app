@@ -6,7 +6,7 @@ var _pages := {}
 var _nav := {}
 var _cur := ""
 var _title: Label
-var _games: OptionButton
+var _games: Button
 var _body: Control
 var _toast: Label
 
@@ -138,25 +138,10 @@ func _show_app() -> void:
 	_title = AUI.lbl(th, "", 30, AUI.TXT)
 	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_games = OptionButton.new()
+	_games = AUI.btn(th, "", func(): _pick_game(), AUI.PANEL, 16, 44)
 	_games.custom_minimum_size = Vector2(150, 44)
-	for sn in ["normal", "hover", "pressed", "focus"]:
-		_games.add_theme_stylebox_override(sn, AUI.sb(Color(1, 1, 1, 0.08), 22, Color(1, 1, 1, 0.12), 1))
-	_games.add_theme_color_override("font_color", AUI.TXT)
-	_games.add_theme_color_override("font_hover_color", AUI.TXT)
-	_games.add_theme_color_override("font_pressed_color", AUI.TXT)
-	_games.add_theme_font_size_override("font_size", 16)
-	var pop := _games.get_popup()
-	pop.add_theme_stylebox_override("panel", AUI.sb(Color(0.08, 0.08, 0.09), 18, AUI.LINE, 1))
-	pop.add_theme_stylebox_override("hover", AUI.sb(Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.2), 10))
-	pop.add_theme_color_override("font_color", AUI.TXT)
-	pop.add_theme_color_override("font_hover_color", AUI.ACCENT)
-	pop.add_theme_font_size_override("font_size", 18)
-	_games.item_selected.connect(func(i: int):
-		Api.game = "" if i == 0 else Api.games[i - 1]
-		Api.save()
-		_refresh())
-	th.add_child(_games)
+	_games.clip_text = true
+	_set_game_label()
 	AUI.btn(th, "تحديث", func(): _refresh(), AUI.PANEL, 16, 44)
 	AUI.btn(th, "خروج", func():
 		Api.logout()
@@ -215,14 +200,33 @@ func _show_app() -> void:
 		if code != 200:
 			return
 		Api.games = s.get("games", [])
-		_games.clear()
-		_games.add_item("كل الألعاب")
-		var sel := 0
-		for i in Api.games.size():
-			_games.add_item(str(Api.games[i]))
-			if Api.games[i] == Api.game:
-				sel = i + 1
-		_games.select(sel))
+		_set_game_label())
+
+
+func _set_game_label() -> void:
+	if _games != null and is_instance_valid(_games):
+		_games.text = (Api.game if Api.game != "" else "كل الألعاب") + "  ▾"
+
+
+func _pick_game() -> void:
+	var m := AModal.open(self, "اللعبة")
+	var opts: Array = [""]
+	opts.append_array(Api.games)
+	for g in opts:
+		var gs := str(g)
+		var on := gs == Api.game
+		var b := AUI.btn(m.content, gs if gs != "" else "كل الألعاب", func():
+			Api.game = gs
+			Api.save()
+			_set_game_label()
+			m.close()
+			_refresh(), AUI.PANEL, 20, 54)
+		if on:
+			b.add_theme_color_override("font_color", AUI.ACCENT)
+			b.add_theme_color_override("font_hover_color", AUI.ACCENT)
+			b.add_theme_color_override("font_pressed_color", AUI.ACCENT)
+			for k in ["normal", "hover", "pressed"]:
+				b.add_theme_stylebox_override(k, AUI.sb(Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.16), 27, Color(AUI.ACCENT.r, AUI.ACCENT.g, AUI.ACCENT.b, 0.7), 1))
 
 
 func _open(id: String) -> void:
