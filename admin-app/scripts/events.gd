@@ -57,6 +57,9 @@ func refresh() -> void:
 func _new_form() -> void:
 	var m := AModal.open(app, "فعالية جديدة")
 	var v := m.content
+	var tpl := HBoxContainer.new()
+	tpl.add_theme_constant_override("separation", 8)
+	v.add_child(tpl)
 	var ta := AUI.field(v, "العنوان بالعربي", "")
 	var te := AUI.field(v, "العنوان بالإنجليزي", "")
 	var ba := AUI.field(v, "الوصف بالعربي", "")
@@ -65,6 +68,18 @@ func _new_form() -> void:
 	var rg := AUI.field(v, "جائزة جواهر", "0", true)
 	var days := AUI.field(v, "المدة بالأيام", "7", true)
 	var game := AUI.field(v, "اللعبة (فارغ = كل الألعاب)", Api.game, false, "hairpin")
+	for t in [["نهاية الأسبوع", "هدية نهاية الأسبوع", "Weekend gift", "ادخل واستلم هديتك!", "Log in and claim your gift!", 1000, 5, 3],
+			["هدية يومية", "هدية اليوم", "Daily gift", "هدية صغيرة لك اليوم", "A small gift for you today", 300, 0, 1]]:
+		var tt: Array = t
+		var tb := AUI.btn(tpl, tt[0], func():
+			ta.text = tt[1]
+			te.text = tt[2]
+			ba.text = tt[3]
+			be.text = tt[4]
+			rc.text = str(tt[5])
+			rg.text = str(tt[6])
+			days.text = str(tt[7]), AUI.PANEL, 16, 40)
+		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var out := AUI.lbl(v, "", 20, AUI.OK, true)
 	out.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var busy := {"b": null, "on": false}
