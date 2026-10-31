@@ -29,13 +29,37 @@ func refresh() -> void:
 		AUI.lbl(rev, "آخر 24 ساعة: %s     |     عمليات الدفع: %d" % [AUI.usd(float(s.get("revenue_24h_usd", 0))), int(s.get("paid_orders", 0))], 17, AUI.TXT2)
 		if int(s.get("test_orders", 0)) > 0:
 			AUI.lbl(rev, "عمليات تجريبية: %d (%s) - لا تُحسب" % [int(s["test_orders"]), AUI.usd(float(s.get("test_revenue_usd", 0)))], 15, AUI.TXT2)
+		var ser: Array = s.get("series", [])
+		if not ser.is_empty():
+			var days: Array = []
+			var np: Array = []
+			var rd: Array = []
+			var rv: Array = []
+			for it in ser:
+				days.append(str(it["day"]).substr(3))
+				np.append(int(it["new_players"]))
+				rd.append(int(it["redemptions"]))
+				rv.append(float(it["revenue"]))
+			var c1 := AUI.card(_list)
+			AUI.lbl(c1, "لاعبون جدد (آخر 7 أيام)", 16, AUI.TXT2)
+			c1.add_child(ABars.new(np, days, AUI.ACCENT))
+			var c2 := AUI.card(_list)
+			AUI.lbl(c2, "تفعيل الأكواد (آخر 7 أيام)", 16, AUI.TXT2)
+			c2.add_child(ABars.new(rd, days, AUI.OK))
+			var tot := 0.0
+			for x in rv:
+				tot += float(x)
+			if tot > 0.0:
+				var c3 := AUI.card(_list)
+				AUI.lbl(c3, "الأرباح (آخر 7 أيام)", 16, AUI.TXT2)
+				c3.add_child(ABars.new(rv, days, AUI.GOLD, true))
 		var g := GridContainer.new()
 		g.columns = 2
 		g.add_theme_constant_override("h_separation", 10)
 		g.add_theme_constant_override("v_separation", 10)
 		_list.add_child(g)
 		for it in [["اللاعبون", "players", AUI.TXT], ["نشطون (24س)", "active_24h", AUI.OK], ["أكواد فعّالة", "codes_active", AUI.TXT], ["مرات تفعيل الأكواد", "redemptions", AUI.TXT],
-				["فعاليات جارية", "events_active", AUI.TXT], ["طلبات معلّقة", "pending_orders", AUI.GOLD], ["أخطاء (24س)", "errors_24h", AUI.BAD if int(s.get("errors_24h", 0)) > 0 else AUI.OK]]:
+				["فعاليات جارية", "events_active", AUI.TXT], ["طلبات معلّقة", "pending_orders", AUI.GOLD], ["محظورون", "banned", AUI.BAD if int(s.get("banned", 0)) > 0 else AUI.TXT], ["أخطاء (24س)", "errors_24h", AUI.BAD if int(s.get("errors_24h", 0)) > 0 else AUI.OK]]:
 			var c := AUI.card(g)
 			c.get_parent().size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			AUI.lbl(c, it[0], 15, AUI.TXT2)
