@@ -5,7 +5,9 @@
 Pure standard library (no pip packages): python3 server.py
 Data lives in one SQLite file. Put it behind HTTPS (reverse proxy) before real use.
 """
+import csv
 import hashlib
+import io
 import hmac
 import json
 import os
@@ -87,13 +89,62 @@ def init_db():
         CREATE TABLE IF NOT EXISTS event_claims(event_id INTEGER, player_id TEXT, ts INTEGER, PRIMARY KEY(event_id, player_id));
         CREATE TABLE IF NOT EXISTS orders(id TEXT PRIMARY KEY, player_id TEXT, game TEXT, pack_id TEXT, kind TEXT, amount INTEGER, price_usd REAL, provider TEXT, provider_ref TEXT, status TEXT, created_at INTEGER, paid_at INTEGER, granted_at INTEGER);
         CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, version TEXT, player_id TEXT, kind TEXT, message TEXT, stack TEXT, platform TEXT, ts INTEGER);
+        CREATE TABLE IF NOT EXISTS grants(id INTEGER PRIMARY KEY AUTOINCREMENT, player_id TEXT, coins INTEGER, gems INTEGER, note TEXT, created_at INTEGER, claimed_at INTEGER);
+        CREATE TABLE IF NOT EXISTS announcements(id INTEGER PRIMARY KEY AUTOINCREMENT, game TEXT, text TEXT, text_ar TEXT, ends_at INTEGER, active INTEGER, created_at INTEGER);
+        CREATE TABLE IF NOT EXISTS gamecfg(game TEXT PRIMARY KEY, json TEXT);
+        CREATE TABLE IF NOT EXISTS messages(id INTEGER PRIMARY KEY AUTOINCREMENT, player_id TEXT, game TEXT, from_admin INTEGER, text TEXT, ts INTEGER, delivered_at INTEGER, read_at INTEGER);
+        CREATE TABLE IF NOT EXISTS scores(game TEXT, board TEXT, player_id TEXT, name TEXT, score INTEGER, ts INTEGER, hidden INTEGER DEFAULT 0, PRIMARY KEY(game, board, player_id));
+        CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, who TEXT, action TEXT, detail TEXT);
+        CREATE TABLE IF NOT EXISTS admin_keys(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, role TEXT, key_hash TEXT UNIQUE, created_at INTEGER);
+        CREATE INDEX IF NOT EXISTS ix_messages_player ON messages(player_id);
         CREATE INDEX IF NOT EXISTS ix_reports_ts ON reports(ts);
+        CREATE INDEX IF NOT EXISTS ix_grants_player ON grants(player_id);
         CREATE INDEX IF NOT EXISTS ix_orders_player ON orders(player_id);
         """)
+        migrate(c)
 
 
 def now():
     return int(time.time())
+
+
+def migrate(c):
+    cols = [r["name"] for r in c.execute("PRAGMA table_info(players)")]
+    if "banned" not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN banned INTEGER DEFAULT 0")
+    if "ban_reason" not in cols:
+        c.execute("ALTER TABLE players ADD COLUMN ban_reason TEXT DEFAULT ''")
+
+
+def get_cfg(c, game=""):
+    """remote settings: global ('') overlaid by the game's own, one top-level key at a time"""
+    out = {}
+    for g in ("", game):
+        if g == "" and out:
+            continue
+        r = c.execute("SELECT json FROM gamecfg WHERE game=?", (g,)).fetchone()
+        if r:
+            try:
+                out.update(json.loads(r["json"]))
+            except ValueError:
+                pass
+        if game == "":
+            break
+    return out
+
+
+def hash_key(k):
+    return hashlib.sha256(k.encode()).hexdigest()
+
+
+OWNER_ONLY = {"player/ban", "gamecfg", "keys", "key/create", "key/delete", "reports/clear", "code/delete", "event/delete",
+              "announce/delete", "score/hide", "audit"}
+GET_OWNER_ONLY = {"keys", "audit", "gamecfg"}
+
+
+def is_banned(c, pid):
+    r = c.execute("SELECT banned FROM players WHERE id=?", (pid,)).fetchone()
+    return bool(r and r["banned"])
 
 
 # ----------------------------------------------------------------------------- rate limiting
@@ -123,8 +174,10 @@ def norm_code(s):
     return "".join(ch for ch in str(s).upper() if ch.isalnum())
 
 
-def pack_of(pack_id):
-    for p in CFG["packs"]:
+def pack_of(pack_id, game=""):
+    with DB_LOCK, db() as c:
+        over = get_cfg(c, game).get("packs")
+    for p in (over if isinstance(over, list) and over else CFG["packs"]):
         if p["id"] == pack_id:
             return p
     return None
@@ -138,7 +191,7 @@ def touch_player(c, pid, name="", game="", platform="", version=""):
         c.execute("UPDATE players SET last_seen=?, name=COALESCE(NULLIF(?,''),name), game=COALESCE(NULLIF(?,''),game), platform=COALESCE(NULLIF(?,''),platform), version=COALESCE(NULLIF(?,''),version) WHERE id=?",
                   (now(), name, game, platform, version, pid))
     else:
-        c.execute("INSERT INTO players VALUES(?,?,?,?,?,?,?)", (pid, name, game, platform, version, now(), now()))
+        c.execute("INSERT INTO players(id,name,game,platform,version,first_seen,last_seen) VALUES(?,?,?,?,?,?,?)", (pid, name, game, platform, version, now(), now()))
 
 
 # ----------------------------------------------------------------------------- payments
@@ -214,18 +267,28 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def raw_body(self):
+        if getattr(self, "_raw", None) is not None:
+            return self._raw
         n = int(self.headers.get("Content-Length") or 0)
         if n > 200_000:
             raise ValueError("body too large")
-        return self.rfile.read(n) if n else b""
+        self._raw = self.rfile.read(n) if n else b""
+        return self._raw
 
     def json_body(self):
         b = self.raw_body()
         return json.loads(b.decode() or "{}") if b else {}
 
-    def is_admin(self):
+    def admin_role(self):
+        """('owner'|'editor'|'viewer', name) or None"""
         key = self.headers.get("X-Admin-Key", "")
-        return hmac.compare_digest(key.encode(), CFG["admin_key"].encode())
+        if not key:
+            return None
+        if hmac.compare_digest(key.encode(), CFG["admin_key"].encode()):
+            return ("owner", "owner")
+        with DB_LOCK, db() as c:
+            r = c.execute("SELECT name, role FROM admin_keys WHERE key_hash=?", (hash_key(key),)).fetchone()
+        return (r["role"], r["name"]) if r else None
 
     # ---- routing
     def do_GET(self):
@@ -245,11 +308,25 @@ class H(BaseHTTPRequestHandler):
             if path == "/":
                 return self.send_json({"service": "sabak-backend", "ok": True})
             if path.startswith("/admin/api/"):
-                if not self.is_admin():
+                who = self.admin_role()
+                if not who:
                     if not rate_ok("badadmin:" + self.ip(), 10):
                         return self.send_json({"error": "rate"}, 429)
                     return self.send_json({"error": "unauthorized"}, 401)
-                return self.admin(method, path[len("/admin/api/"):], q)
+                self.role, self.who = who
+                ap = path[len("/admin/api/"):]
+                if self.role == "viewer" and (method != "GET" or ap in GET_OWNER_ONLY):
+                    return self.send_json({"error": "forbidden"}, 403)
+                if self.role == "editor" and (ap in OWNER_ONLY and (method != "GET" or ap in GET_OWNER_ONLY)):
+                    return self.send_json({"error": "forbidden"}, 403)
+                if method == "POST":
+                    try:
+                        det = self.raw_body().decode()[:200]
+                    except Exception:
+                        det = ""
+                    with DB_LOCK, db() as c:
+                        c.execute("INSERT INTO audit(ts,who,action,detail) VALUES(?,?,?,?)", (now(), self.who, ap, det))
+                return self.admin(method, ap, q)
             return self.public(method, path, q)
         except Exception as e:  # never crash the server on a bad request
             sys.stderr.write("ERROR %r\n" % (e,))
@@ -263,11 +340,82 @@ class H(BaseHTTPRequestHandler):
         if path == "/api/config" and method == "GET":
             with DB_LOCK, db() as c:
                 evs = [dict(r) for r in c.execute("SELECT id,title,title_ar,body,body_ar,ends_at,reward_coins,reward_gems FROM events WHERE active=1 AND starts_at<=? AND ends_at>=? AND (game=? OR game='')", (now(), now(), q.get("game", "")))]
-            return self.send_json({"ok": True, "time": now(), "payments": CFG["provider"] in ("stripe", "test"), "provider": CFG["provider"], "packs": CFG["packs"], "events": evs})
+            with DB_LOCK, db() as c:
+                ann = [dict(r) for r in c.execute("SELECT id,text,text_ar FROM announcements WHERE active=1 AND (ends_at=0 OR ends_at>=?) AND (game=? OR game='') ORDER BY id DESC LIMIT 3", (now(), q.get("game", "")))]
+            with DB_LOCK, db() as c:
+                gcfg = get_cfg(c, q.get("game", ""))
+            packs = gcfg.pop("packs", None)
+            return self.send_json({"ok": True, "announcements": ann, "time": now(), "payments": CFG["provider"] in ("stripe", "test"), "provider": CFG["provider"],
+                                   "packs": packs if isinstance(packs, list) and packs else CFG["packs"], "events": evs, "cfg": gcfg})
         if path == "/api/player/hello" and method == "POST":
             b = self.json_body()
             with DB_LOCK, db() as c:
-                touch_player(c, str(b.get("player_id", ""))[:64], str(b.get("name", ""))[:40], str(b.get("game", ""))[:40], str(b.get("platform", ""))[:30], str(b.get("version", ""))[:20])
+                pid = str(b.get("player_id", ""))[:64]
+                touch_player(c, pid, str(b.get("name", ""))[:40], str(b.get("game", ""))[:40], str(b.get("platform", ""))[:30], str(b.get("version", ""))[:20])
+                banned = is_banned(c, pid)
+                grants = [] if banned else [dict(r) for r in c.execute("SELECT id,coins,gems,note FROM grants WHERE player_id=? AND claimed_at IS NULL ORDER BY id LIMIT 20", (pid,))]
+                msgs = [dict(r) for r in c.execute("SELECT id,text FROM messages WHERE player_id=? AND from_admin=1 AND delivered_at IS NULL ORDER BY id LIMIT 5", (pid,))]
+            return self.send_json({"ok": True, "banned": banned, "grants": grants, "messages": msgs})
+        if path == "/api/msg/ack" and method == "POST":
+            b = self.json_body()
+            with DB_LOCK, db() as c:
+                c.execute("UPDATE messages SET delivered_at=? WHERE id=? AND player_id=? AND from_admin=1", (now(), int(b.get("id", 0)), str(b.get("player_id", ""))[:64]))
+            return self.send_json({"ok": True})
+        if path == "/api/support/send" and method == "POST":
+            b = self.json_body()
+            pid = str(b.get("player_id", ""))[:64]
+            text = str(b.get("text", "")).strip()[:500]
+            if not pid or not text:
+                return self.send_json({"ok": False, "error": "invalid"})
+            if not rate_ok("support:" + pid, 5, 600):
+                return self.send_json({"ok": False, "error": "rate"}, 429)
+            with DB_LOCK, db() as c:
+                touch_player(c, pid, str(b.get("name", ""))[:40], str(b.get("game", ""))[:40])
+                if is_banned(c, pid):
+                    return self.send_json({"ok": False, "error": "banned"}, 403)
+                c.execute("INSERT INTO messages(player_id,game,from_admin,text,ts) VALUES(?,?,0,?,?)", (pid, str(b.get("game", ""))[:40], text, now()))
+            return self.send_json({"ok": True})
+        if path == "/api/score" and method == "POST":
+            b = self.json_body()
+            pid = str(b.get("player_id", ""))[:64]
+            try:
+                sc = int(b.get("score", 0))
+            except (TypeError, ValueError):
+                sc = -1
+            if not pid or sc < 0 or sc > 2_000_000_000:
+                return self.send_json({"ok": False, "error": "invalid"})
+            if not rate_ok("score:" + pid, 30):
+                return self.send_json({"ok": False, "error": "rate"}, 429)
+            game = str(b.get("game", ""))[:40]
+            board = str(b.get("board", "xp"))[:30]
+            with DB_LOCK, db() as c:
+                touch_player(c, pid, str(b.get("name", ""))[:40], game)
+                if is_banned(c, pid):
+                    return self.send_json({"ok": False, "error": "banned"}, 403)
+                c.execute("INSERT INTO scores(game,board,player_id,name,score,ts) VALUES(?,?,?,?,?,?) ON CONFLICT(game,board,player_id) DO UPDATE SET score=MAX(score,excluded.score), name=excluded.name, ts=excluded.ts",
+                          (game, board, pid, str(b.get("name", ""))[:40], sc, now()))
+            return self.send_json({"ok": True})
+        if path == "/api/leaderboard" and method == "GET":
+            game = q.get("game", "")
+            board = q.get("board", "xp")
+            lim = max(1, min(int(q.get("limit", 20)), 50))
+            with DB_LOCK, db() as c:
+                base = "FROM scores s LEFT JOIN players p ON p.id=s.player_id WHERE s.game=? AND s.board=? AND s.hidden=0 AND COALESCE(p.banned,0)=0"
+                rows = [dict(r) for r in c.execute("SELECT s.name, s.score, s.player_id " + base + " ORDER BY s.score DESC LIMIT ?", (game, board, lim))]
+                me = None
+                pid = q.get("player_id", "")
+                if pid:
+                    r = c.execute("SELECT s.score " + base + " AND s.player_id=?", (game, board, pid)).fetchone()
+                    if r:
+                        rank = c.execute("SELECT COUNT(*) n " + base + " AND s.score>?", (game, board, r["score"])).fetchone()["n"] + 1
+                        me = {"score": r["score"], "rank": rank}
+            for r in rows:
+                r["mine"] = r.pop("player_id") == pid and pid != ""
+            return self.send_json({"ok": True, "rows": rows, "me": me})
+        if path == "/api/grant/ack" and method == "POST":
+            b = self.json_body()
+            with DB_LOCK, db() as c:
+                c.execute("UPDATE grants SET claimed_at=? WHERE id=? AND player_id=? AND claimed_at IS NULL", (now(), int(b.get("id", 0)), str(b.get("player_id", ""))[:64]))
             return self.send_json({"ok": True})
         if path == "/api/redeem" and method == "POST":
             return self.redeem(self.json_body())
@@ -306,6 +454,8 @@ class H(BaseHTTPRequestHandler):
         game = str(b.get("game", ""))
         with DB_LOCK, db() as c:
             touch_player(c, pid, game=game)
+            if is_banned(c, pid):
+                return self.send_json({"ok": False, "error": "banned"}, 403)
             row = None
             for r in c.execute("SELECT * FROM codes WHERE active=1"):
                 if norm_code(r["code"]) == code:
@@ -337,6 +487,8 @@ class H(BaseHTTPRequestHandler):
         pid = str(b.get("player_id", ""))[:64]
         eid = int(b.get("event_id", 0))
         with DB_LOCK, db() as c:
+            if is_banned(c, pid):
+                return self.send_json({"ok": False, "error": "banned"}, 403)
             r = c.execute("SELECT * FROM events WHERE id=? AND active=1 AND starts_at<=? AND ends_at>=?", (eid, now(), now())).fetchone()
             if not r:
                 return self.send_json({"ok": False, "error": "closed"})
@@ -348,7 +500,7 @@ class H(BaseHTTPRequestHandler):
 
     def pay_create(self, b):
         pid = str(b.get("player_id", ""))[:64]
-        pack = pack_of(str(b.get("pack_id", "")))
+        pack = pack_of(str(b.get("pack_id", "")), str(b.get("game", ""))[:40])
         if not pid or not pack:
             return self.send_json({"ok": False, "error": "invalid"})
         if CFG["provider"] not in ("stripe", "test"):
@@ -421,7 +573,7 @@ class H(BaseHTTPRequestHandler):
         ga = (game,) if game else ()
         with DB_LOCK, db() as c:
             if path == "ping":
-                return self.send_json({"ok": True})
+                return self.send_json({"ok": True, "role": self.role})
             if path == "summary":
                 day = now() - 86400
                 rev = c.execute("SELECT COALESCE(SUM(price_usd),0) s, COUNT(*) n FROM orders WHERE status IN ('paid','granted') AND provider!='test'" + gw, ga).fetchone()
@@ -439,6 +591,21 @@ class H(BaseHTTPRequestHandler):
                     "games": [r["game"] for r in c.execute("SELECT DISTINCT game FROM players WHERE game!=''")],
                     "provider": CFG["provider"],
                 }
+                series = []
+                t0 = now() - (now() % 86400)   # UTC midnight today
+                for i in range(6, -1, -1):
+                    a, z = t0 - i * 86400, t0 - i * 86400 + 86400
+                    series.append({
+                        "day": time.strftime("%m-%d", time.gmtime(a)),
+                        "new_players": c.execute("SELECT COUNT(*) n FROM players WHERE first_seen>=? AND first_seen<?" + gw, (a, z) + ga).fetchone()["n"],
+                        "active": c.execute("SELECT COUNT(*) n FROM players WHERE last_seen>=? AND last_seen<?" + gw, (a, z) + ga).fetchone()["n"],
+                        "redemptions": c.execute("SELECT COUNT(*) n FROM redemptions WHERE ts>=? AND ts<?", (a, z)).fetchone()["n"],
+                        "revenue": c.execute("SELECT COALESCE(SUM(price_usd),0) s FROM orders WHERE status IN ('paid','granted') AND provider!='test' AND paid_at>=? AND paid_at<?" + gw, (a, z) + ga).fetchone()["s"],
+                    })
+                out["series"] = series
+                out["errors_1h"] = c.execute("SELECT COUNT(*) n FROM reports WHERE ts>? AND kind!='info'" + gw, (now() - 3600,) + ga).fetchone()["n"]
+                out["support_unread"] = c.execute("SELECT COUNT(*) n FROM messages WHERE from_admin=0 AND read_at IS NULL").fetchone()["n"]
+                out["banned"] = c.execute("SELECT COUNT(*) n FROM players WHERE banned=1" + gw, ga).fetchone()["n"]
                 return self.send_json(out)
             if path == "payments":
                 rows = c.execute("SELECT o.*, COALESCE(p.name,'') name FROM orders o LEFT JOIN players p ON p.id=o.player_id WHERE 1=1" + gw.replace("game", "o.game") + " ORDER BY o.created_at DESC LIMIT ?", ga + (int(q.get("limit", 100)),))
@@ -447,8 +614,125 @@ class H(BaseHTTPRequestHandler):
                 rows = c.execute("SELECT o.player_id, COALESCE(p.name,'') name, SUM(o.price_usd) total, COUNT(*) n, MAX(o.paid_at) last FROM orders o LEFT JOIN players p ON p.id=o.player_id WHERE o.status IN ('paid','granted') AND o.provider!='test'" + gw.replace("game", "o.game") + " GROUP BY o.player_id ORDER BY total DESC LIMIT 100", ga)
                 return self.send_json({"spenders": [dict(r) for r in rows]})
             if path == "players":
-                rows = c.execute("SELECT * FROM players WHERE 1=1" + gw + " ORDER BY last_seen DESC LIMIT 200", ga)
+                term = str(q.get("q", "")).strip()
+                tw = " AND (name LIKE ? OR id LIKE ?)" if term else ""
+                ta = ("%" + term + "%", "%" + term + "%") if term else ()
+                rows = c.execute("SELECT * FROM players WHERE 1=1" + gw + tw + " ORDER BY last_seen DESC LIMIT 200", ga + ta)
                 return self.send_json({"players": [dict(r) for r in rows]})
+            if path == "gamecfg":
+                g = q.get("game", "")
+                if method == "GET":
+                    r = c.execute("SELECT json FROM gamecfg WHERE game=?", (g,)).fetchone()
+                    own = json.loads(r["json"]) if r else {}
+                    return self.send_json({"ok": True, "cfg": own, "effective": get_cfg(c, g), "game": g, "packs_default": CFG["packs"]})
+                b = self.json_body()
+                g = str(b.get("game", ""))[:40]
+                key = str(b.get("key", ""))[:40]
+                if not key:
+                    return self.send_json({"ok": False, "error": "invalid"})
+                r = c.execute("SELECT json FROM gamecfg WHERE game=?", (g,)).fetchone()
+                cur = json.loads(r["json"]) if r else {}
+                if b.get("value", None) is None:
+                    cur.pop(key, None)
+                else:
+                    cur[key] = b["value"]
+                c.execute("INSERT INTO gamecfg(game,json) VALUES(?,?) ON CONFLICT(game) DO UPDATE SET json=excluded.json", (g, json.dumps(cur, ensure_ascii=False)))
+                return self.send_json({"ok": True, "cfg": cur})
+            if path == "support":
+                rows = c.execute("SELECT m.player_id, COALESCE(p.name,'') name, COALESCE(p.game,'') game, MAX(m.id) last_id, SUM(CASE WHEN m.from_admin=0 AND m.read_at IS NULL THEN 1 ELSE 0 END) unread FROM messages m LEFT JOIN players p ON p.id=m.player_id WHERE 1=1" + gw.replace("game", "m.game") + " GROUP BY m.player_id ORDER BY last_id DESC LIMIT 100", ga)
+                out = []
+                for r in rows:
+                    d = dict(r)
+                    last = c.execute("SELECT text, from_admin, ts FROM messages WHERE id=?", (d["last_id"],)).fetchone()
+                    d.update({"text": last["text"], "from_admin": last["from_admin"], "ts": last["ts"]})
+                    out.append(d)
+                return self.send_json({"threads": out})
+            if path == "support/thread":
+                pid = q.get("player_id", "")
+                c.execute("UPDATE messages SET read_at=? WHERE player_id=? AND from_admin=0 AND read_at IS NULL", (now(), pid))
+                rows = c.execute("SELECT id,from_admin,text,ts,delivered_at FROM messages WHERE player_id=? ORDER BY id DESC LIMIT 60", (pid,))
+                return self.send_json({"messages": [dict(r) for r in rows][::-1]})
+            if path == "support/send" and method == "POST":
+                b = self.json_body()
+                pid = str(b.get("player_id", ""))
+                text = str(b.get("text", "")).strip()[:500]
+                r = c.execute("SELECT game FROM players WHERE id=?", (pid,)).fetchone()
+                if not r or not text:
+                    return self.send_json({"ok": False, "error": "invalid"})
+                c.execute("INSERT INTO messages(player_id,game,from_admin,text,ts) VALUES(?,?,1,?,?)", (pid, r["game"], text, now()))
+                return self.send_json({"ok": True})
+            if path == "scores":
+                board = q.get("board", "xp")
+                rows = c.execute("SELECT s.game, s.board, s.player_id, s.name, s.score, s.hidden, COALESCE(p.banned,0) banned FROM scores s LEFT JOIN players p ON p.id=s.player_id WHERE s.board=?" + gw.replace("game", "s.game") + " ORDER BY s.score DESC LIMIT 100", (board,) + ga)
+                return self.send_json({"scores": [dict(r) for r in rows]})
+            if path == "score/hide" and method == "POST":
+                b = self.json_body()
+                c.execute("UPDATE scores SET hidden=? WHERE game=? AND board=? AND player_id=?", (1 if b.get("hidden") else 0, str(b.get("game", "")), str(b.get("board", "xp")), str(b.get("player_id", ""))))
+                return self.send_json({"ok": True})
+            if path == "audit":
+                rows = c.execute("SELECT * FROM audit ORDER BY id DESC LIMIT 150")
+                return self.send_json({"audit": [dict(r) for r in rows]})
+            if path == "keys":
+                return self.send_json({"keys": [dict(r) for r in c.execute("SELECT id,name,role,created_at FROM admin_keys ORDER BY id")]})
+            if path == "key/create" and method == "POST":
+                b = self.json_body()
+                role = str(b.get("role", "viewer"))
+                if role not in ("editor", "viewer"):
+                    role = "viewer"
+                k = secrets.token_urlsafe(18)
+                c.execute("INSERT INTO admin_keys(name,role,key_hash,created_at) VALUES(?,?,?,?)", (str(b.get("name", "مساعد"))[:30], role, hash_key(k), now()))
+                return self.send_json({"ok": True, "key": k, "role": role})
+            if path == "key/delete" and method == "POST":
+                c.execute("DELETE FROM admin_keys WHERE id=?", (int(self.json_body().get("id", 0)),))
+                return self.send_json({"ok": True})
+            if path == "export":
+                what = q.get("what", "players")
+                buf = io.StringIO()
+                w = csv.writer(buf)
+                if what == "payments":
+                    cols = ["id", "player_id", "game", "pack_id", "kind", "amount", "price_usd", "provider", "status", "created_at", "paid_at"]
+                    rows = c.execute("SELECT " + ",".join(cols) + " FROM orders WHERE 1=1" + gw + " ORDER BY created_at DESC LIMIT 5000", ga)
+                elif what == "codes":
+                    cols = ["code", "game", "coins", "gems", "max_uses", "expires_at", "note", "active", "created_at"]
+                    rows = c.execute("SELECT " + ",".join(cols) + " FROM codes WHERE 1=1" + gw + " ORDER BY created_at DESC LIMIT 5000", ga)
+                else:
+                    cols = ["id", "name", "game", "platform", "version", "first_seen", "last_seen", "banned"]
+                    rows = c.execute("SELECT " + ",".join(cols) + " FROM players WHERE 1=1" + gw + " ORDER BY last_seen DESC LIMIT 20000", ga)
+                w.writerow(cols)
+                for r in rows:
+                    w.writerow([r[k] for k in cols])
+                return self.send_json({"ok": True, "csv": buf.getvalue(), "what": what})
+            if path == "player/ban" and method == "POST":
+                b = self.json_body()
+                c.execute("UPDATE players SET banned=?, ban_reason=? WHERE id=?", (1 if b.get("banned") else 0, str(b.get("reason", ""))[:80], str(b.get("player_id", ""))))
+                return self.send_json({"ok": True})
+            if path == "player/grant" and method == "POST":
+                b = self.json_body()
+                coins = max(0, min(int(b.get("coins", 0) or 0), 100000000))
+                gems = max(0, min(int(b.get("gems", 0) or 0), 1000000))
+                pid = str(b.get("player_id", ""))
+                if not pid or (coins == 0 and gems == 0) or not c.execute("SELECT 1 FROM players WHERE id=?", (pid,)).fetchone():
+                    return self.send_json({"ok": False, "error": "invalid"})
+                c.execute("INSERT INTO grants(player_id,coins,gems,note,created_at) VALUES(?,?,?,?,?)", (pid, coins, gems, str(b.get("note", ""))[:80], now()))
+                return self.send_json({"ok": True})
+            if path == "grants":
+                rows = c.execute("SELECT g.*, COALESCE(p.name,'') name FROM grants g LEFT JOIN players p ON p.id=g.player_id ORDER BY g.id DESC LIMIT 50")
+                return self.send_json({"grants": [dict(r) for r in rows]})
+            if path == "announcements":
+                if method == "GET":
+                    return self.send_json({"announcements": [dict(r) for r in c.execute("SELECT * FROM announcements WHERE 1=1" + gw + " ORDER BY id DESC LIMIT 50", ga)]})
+                b = self.json_body()
+                days = float(b.get("days", 0) or 0)
+                c.execute("INSERT INTO announcements(game,text,text_ar,ends_at,active,created_at) VALUES(?,?,?,?,1,?)",
+                          (str(b.get("game", ""))[:40], str(b.get("text", ""))[:300], str(b.get("text_ar", ""))[:300], now() + int(days * 86400) if days > 0 else 0, now()))
+                return self.send_json({"ok": True})
+            if path == "announce/toggle" and method == "POST":
+                b = self.json_body()
+                c.execute("UPDATE announcements SET active=? WHERE id=?", (1 if b.get("active") else 0, int(b.get("id", 0))))
+                return self.send_json({"ok": True})
+            if path == "announce/delete" and method == "POST":
+                c.execute("DELETE FROM announcements WHERE id=?", (int(self.json_body().get("id", 0)),))
+                return self.send_json({"ok": True})
             if path == "codes":
                 if method == "GET":
                     rows = []
