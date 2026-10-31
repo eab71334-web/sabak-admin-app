@@ -5,6 +5,7 @@ extends VBoxContainer
 
 var app: Node
 var _list: VBoxContainer
+var _q: LineEdit
 
 
 func _init() -> void:
@@ -22,6 +23,7 @@ func _init() -> void:
 			app.say("تم")
 			refresh()), AUI.CARD, 17, 46)
 	b2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_q = AUI.search_box(self, "بحث في الأخطاء", func(t: String): AUI.apply_filter(_list, t))
 	_list = AUI.scroll_page(self)
 
 
@@ -55,4 +57,5 @@ func refresh() -> void:
 			AUI.lbl(c, "[%s]  %s" % [str(r["kind"]), str(r["message"])], 17, kc, true)
 			AUI.lbl(c, "%s    |    %s %s    |    %s" % [AUI.when(int(r["ts"])), str(r["platform"]), str(r["version"]), str(r["game"])], 14, AUI.TXT2, true)
 			if str(r["stack"]) != "":
-				AUI.lbl(c, str(r["stack"]).substr(0, 400), 13, AUI.TXT2, true))
+				AUI.lbl(c, str(r["stack"]).substr(0, 400), 13, AUI.TXT2, true)
+		AUI.apply_filter(_list, _q.text))
