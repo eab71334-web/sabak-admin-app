@@ -33,10 +33,12 @@ func _ready() -> void:
 	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	glow.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(glow)
+	Api.denied.connect(func(): say("ليس لديك صلاحية لهذا الإجراء", false))
 	if Api.url != "" and Api.key != "":
 		Api.get_json("ping", func(code: int, _d: Dictionary):
 			if code == 200:
 				_show_app()
+				_lock()
 			else:
 				_show_login(""))
 		_show_login("...")
@@ -201,6 +203,31 @@ func _show_app() -> void:
 			return
 		Api.games = s.get("games", [])
 		_set_game_label())
+
+
+func set_badge(on: bool) -> void:
+	if _nav.has("more") and is_instance_valid(_nav["more"]):
+		(_nav["more"] as Button).text = "المزيد" + (" ●" if on else "")
+
+
+func goto(tab: String, sub := "") -> void:
+	_open(tab)
+	if sub != "" and _pages.has(tab) and _pages[tab].has_method("show_sub"):
+		_pages[tab].call("show_sub", sub)
+
+
+var _lock_node: Control
+
+
+func _lock() -> void:
+	if Api.pin_hash == "" or (_lock_node != null and is_instance_valid(_lock_node)):
+		return
+	_lock_node = ALock.show_lock(self, func(): pass)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_RESUMED and Api.key != "":
+		_lock()
 
 
 func _set_game_label() -> void:

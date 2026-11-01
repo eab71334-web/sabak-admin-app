@@ -57,7 +57,7 @@ static func btn(parent: Node, text: String, cb: Callable, col := CARD, fs := 20,
 		edge = Color(1, 1, 1, 0.12)
 		bw = 1
 	var fg := Color(0.05, 0.04, 0.02) if col == ACCENT else TXT
-	var rad := int(h * 0.5)
+	var rad := maxi(int(h * 0.5) - 1, 4)
 	b.add_theme_color_override("font_color", fg)
 	b.add_theme_color_override("font_hover_color", fg)
 	b.add_theme_color_override("font_pressed_color", fg)
@@ -145,6 +145,45 @@ static func when(ts: int) -> String:
 
 static func usd(v: float) -> String:
 	return "$%.2f" % v
+
+
+static func _texts(n: Node) -> String:
+	var t := ""
+	if n is Label:
+		t += (n as Label).text + " "
+	for c in n.get_children():
+		t += _texts(c)
+	return t
+
+
+## hide the cards (direct PanelContainer children of `list`) that do not contain `term`
+static func apply_filter(list: Node, term: String) -> void:
+	if list == null or not is_instance_valid(list):
+		return
+	var q := term.strip_edges().to_lower()
+	for c in list.get_children():
+		if c is PanelContainer:
+			(c as Control).visible = q == "" or _texts(c).to_lower().contains(q)
+
+
+## small glass search field; `on_change.call(text)` fires while typing
+static func search_box(parent: Node, hint: String, on_change: Callable) -> LineEdit:
+	var le := LineEdit.new()
+	le.placeholder_text = hint
+	le.clear_button_enabled = true
+	le.custom_minimum_size = Vector2(0, 46)
+	le.add_theme_font_size_override("font_size", 18)
+	var fn := sb(Color(1, 1, 1, 0.07), 23, LINE, 1)
+	var ff := sb(Color(1, 1, 1, 0.09), 23, Color(ACCENT.r, ACCENT.g, ACCENT.b, 0.9), 2)
+	le.add_theme_stylebox_override("normal", fn)
+	le.add_theme_stylebox_override("focus", ff)
+	le.add_theme_color_override("font_color", TXT)
+	le.add_theme_color_override("font_placeholder_color", Color(1, 1, 1, 0.3))
+	le.add_theme_color_override("caret_color", ACCENT)
+	le.text_changed.connect(func(t: String): on_change.call(t))
+	le.text_submitted.connect(func(_t: String): hide_kb())
+	parent.add_child(le)
+	return le
 
 
 static func scroll_page(parent: Node) -> VBoxContainer:

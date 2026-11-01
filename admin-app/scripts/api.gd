@@ -8,6 +8,9 @@ var url := ""
 var key := ""
 var game := ""          # "" = all games
 var games: Array = []
+var pin_hash := ""
+
+signal denied
 
 
 func _ready() -> void:
@@ -18,6 +21,7 @@ func _ready() -> void:
 			url = str(d.get("url", ""))
 			key = str(d.get("key", ""))
 			game = str(d.get("game", ""))
+			pin_hash = str(d.get("pin", ""))
 	var env := OS.get_environment("ADMIN_URL")
 	if env != "":
 		url = env
@@ -27,7 +31,7 @@ func _ready() -> void:
 func save() -> void:
 	var f := FileAccess.open(SAVE, FileAccess.WRITE)
 	if f:
-		f.store_string(JSON.stringify({"url": url, "key": key, "game": game}))
+		f.store_string(JSON.stringify({"url": url, "key": key, "game": game, "pin": pin_hash}))
 
 
 func logout() -> void:
@@ -43,6 +47,8 @@ func call_api(method: int, path: String, body: Variant, cb: Callable) -> void:
 	req.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, bytes: PackedByteArray):
 		req.queue_free()
 		var d: Variant = JSON.parse_string(bytes.get_string_from_utf8())
+		if code == 403:
+			denied.emit()
 		if cb.is_valid():
 			cb.call(code if result == HTTPRequest.RESULT_SUCCESS else 0, d if d is Dictionary else {}))
 	var sep := "&" if path.contains("?") else "?"

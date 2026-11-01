@@ -20,6 +20,17 @@ func refresh() -> void:
 		if code != 200:
 			AUI.lbl(_list, "تعذر الاتصال بالسيرفر", 20, AUI.BAD)
 			return
+		var e1 := int(s.get("errors_1h", 0))
+		var su := int(s.get("support_unread", 0))
+		app.call("set_badge", e1 >= 20 or su > 0)
+		if e1 >= 20:
+			var al := AUI.card(_list, Color(1.0, 0.43, 0.41, 0.14))
+			AUI.lbl(al, "ارتفاع في الأخطاء: %d خطأ في آخر ساعة" % e1, 18, AUI.BAD, true)
+			AUI.btn(al, "عرض الأخطاء", func(): app.call("goto", "more", "err"), AUI.PANEL, 16, 40)
+		if su > 0:
+			var sc := AUI.card(_list, Color(0.83, 0.68, 0.36, 0.14))
+			AUI.lbl(sc, "لديك %d رسالة جديدة من اللاعبين" % su, 18, AUI.GOLD, true)
+			AUI.btn(sc, "فتح الدعم", func(): app.call("goto", "more", "sup"), AUI.PANEL, 16, 40)
 		if str(s.get("provider", "")) != "stripe":
 			var w := AUI.card(_list, Color(0.83, 0.68, 0.36, 0.12))
 			AUI.lbl(w, "وضع التجربة: الدفع غير حقيقي. لن تظهر أموال حقيقية قبل تفعيل بوابة الدفع.", 17, AUI.GOLD, true)
